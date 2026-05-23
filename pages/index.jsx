@@ -66,8 +66,12 @@ async function fetchAi(rec, tone) {
 export default function Home() {
   // Data source: either demo (built-in 8 SKUs × marketplaces) or uploaded.
   // We persist the uploaded list to localStorage so a refresh doesn't blow
-  // it away — important when demoing an import flow.
-  const [uploadedListings, setUploadedListings] = usePersistedState("opptra-uploaded", null);
+  // it away — important when demoing an import flow. We also expose the
+  // hydration flag so the page can gate rendering until localStorage has
+  // loaded — otherwise SSR paints the demo data, then hydration flips it
+  // to the uploaded data, producing a visible "1 listing → 10 listings"
+  // flicker every reload.
+  const [uploadedListings, setUploadedListings, uploadedHydrated] = usePersistedState("opptra-uploaded", null);
   const [uploadedFilename, setUploadedFilename] = usePersistedState("opptra-uploaded-name", null);
 
   // Sanitize uploads on read. Two cases to handle:
@@ -111,10 +115,12 @@ export default function Home() {
   const isUploaded = !!(sanitizedUploaded && sanitizedUploaded.length > 0);
 
   // Listing-creation date filter — absolute From / To, ISO yyyy-mm-dd.
-  // Default window = last 7 days so the triage view starts on the freshest
-  // listings; user can widen the window manually for historical work.
-  const [dateFrom, setDateFrom] = usePersistedState("opptra-date-from", daysAgoISO(7));
-  const [dateTo, setDateTo] = usePersistedState("opptra-date-to", todayISO());
+  // Default = no bound (show everything). The case-study demo data spreads
+  // listings over the past ~2 years; a narrow default would hide most of
+  // it on first load. Users can narrow the window manually for ops work,
+  // and the "Last 7d" button is a one-tap shortcut to the fresh-only view.
+  const [dateFrom, setDateFrom] = usePersistedState("opptra-date-from", null);
+  const [dateTo, setDateTo] = usePersistedState("opptra-date-to", null);
 
   // Apply date filter to the source listings before computing recs.
   // Listings without a listedAt timestamp are excluded from a date-bounded
@@ -161,7 +167,8 @@ export default function Home() {
   // Append-only audit trail. Every user-initiated mutation appends an
   // entry; the /audit page reads this directly. Filter-independent —
   // entries persist regardless of the active date window above.
-  const [auditLog, setAuditLog] = usePersistedState("opptra-audit-log", []);
+  // We only need the setter here; the list itself is consumed on /audit.
+  const [, setAuditLog] = usePersistedState("opptra-audit-log", []);
   const appendAudit = useCallback((entry) => {
     setAuditLog(prev => [{ at: Date.now(), ...entry }, ...prev]);
   }, [setAuditLog]);
@@ -407,6 +414,28 @@ export default function Home() {
       </>
     );
   })();
+
+  // Until localStorage has loaded, paint a neutral shell. Without this,
+  // the server renders the demo dataset, the client hydrates to the
+  // uploaded dataset, and the user sees the row count flip ("Oak Cutting
+  // Board" → 10 listings) on every visit.
+  if (!uploadedHydrated) {
+    return (
+      <div className="app">
+        <Topbar/>
+        <main className="page">
+          <div className="page__head">
+            <div>
+              <h1 className="page__title">Today&apos;s Pricing Triage</h1>
+              <div className="page__sub">
+                <span>Loading your data…</span>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="app">

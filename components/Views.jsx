@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from "react";
 import { Icon, Rs } from "./Icon";
-import { ListingRow } from "./ListingRow";
+import { ListingRow, PriceHistoryPanel } from "./ListingRow";
 import { EmptyState, BrandAvatar, MarketplaceLogo } from "./Primitives";
 import { GUT_RULES } from "../lib/heuristics";
 
@@ -379,6 +379,11 @@ export function ApprovalsView({ approvals, onRemind, onCancel, onMarkApproved, r
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* ─── Price history chart — 30-day view + our reprice markers ─── */}
+            <div className="approval-card-v2__chart">
+              <PriceHistoryPanel rec={rec} compact/>
             </div>
 
             {/* ─── Footer: sent meta + actions ─── */}

@@ -8,6 +8,7 @@ import {
   CompRow, RuleItem, ManagerNote, MiniStats, MarketplaceLogo
 } from "./Primitives";
 import { GUT_RULES } from "../lib/heuristics";
+import { usePersistedState } from "../lib/usePersistedState";
 
 // Format "listed X days ago" as a short human string
 function formatListedAge(days) {
@@ -33,6 +34,249 @@ function PriceBox({ label, value, variant = "neutral", delta, displayOverride })
         <span className={"price-box__delta " + (delta > 0 ? "price-box__delta--up" : "price-box__delta--down")}>
           {delta > 0 ? "+" : ""}{Rs(delta)} {delta > 0 ? "↑" : "↓"}
         </span>
+      )}
+    </div>
+  );
+}
+
+// ── useRepriceEvents ─────────────────────────────────────────────
+// Pulls our own repricing actions for a given listing id from the
+// persisted audit log, oldest first. Used by the history chart and
+// the "Recent changes" list inside it.
+export function useRepriceEvents(id) {
+  const [auditLog] = usePersistedState("opptra-audit-log", []);
+  return (auditLog || [])
+    .filter(e => e.id === id && (e.type === "repriced" || e.type === "reprice_reverted"))
+    .sort((a, b) => a.at - b.at);
+}
+
+function fmtAgo(ms) {
+  const secs = Math.floor((Date.now() - ms) / 1000);
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.round(days / 30);
+  return `${months}mo ago`;
+}
+
+// ── Price-history chart with reference lines + our reprice events ──
+// Renders a 30-day chart that overlays:
+//   • our price line (solid indigo) with area fill
+//   • top competitor median (dashed grey)
+//   • floor reference (dashed amber, near the bottom)
+//   • recommended target (dashed indigo) when a recommendation exists
+//   • markers for our reprice events from the audit log
+// Falls back to a sparse just-current-price chart if no history exists
+// (e.g. uploaded data with no synthesized history).
+function PriceHistoryChart({ rec, events }) {
+  const hasHistory = Array.isArray(rec.history30d) && rec.history30d.length > 1;
+  const days = 30;
+
+  // Build the series. If history is missing we synthesize a flat line
+  // at the current price so the axes and reference lines still render
+  // — anything is more useful than an empty box.
+  const hist = hasHistory
+    ? rec.history30d
+    : Array.from({ length: days + 1 }, (_, i) => ({
+        daysAgo: days - i,
+        ourPrice: rec.ourPrice,
+        competitorMedian: rec.topCompetitor?.price ?? rec.ourPrice
+      }));
+
+  const W = 1000, H = 220;
+  const PAD = { top: 18, right: 70, bottom: 28, left: 16 };
+  const innerW = W - PAD.left - PAD.right;
+  const innerH = H - PAD.top - PAD.bottom;
+
+  // Y range — include floor + recommended so reference lines never go off-canvas.
+  const ys = [
+    ...hist.map(h => h.ourPrice),
+    ...hist.map(h => h.competitorMedian),
+    rec.floor,
+    rec.recommended
+  ].filter(Number.isFinite);
+  const lo0 = Math.min(...ys);
+  const hi0 = Math.max(...ys);
+  const padY = (hi0 - lo0) * 0.10 || Math.max(lo0 * 0.04, 1);
+  const lo = lo0 - padY;
+  const hi = hi0 + padY;
+
+  const xAt = (i) => PAD.left + (i / (hist.length - 1)) * innerW;
+  const yAt = (v) => PAD.top + innerH - ((v - lo) / (hi - lo)) * innerH;
+
+  const ourPath = hist.map((d, i) => `${i === 0 ? "M" : "L"}${xAt(i)},${yAt(d.ourPrice)}`).join(" ");
+  const compPath = hist.map((d, i) => `${i === 0 ? "M" : "L"}${xAt(i)},${yAt(d.competitorMedian)}`).join(" ");
+
+  // Convert an event timestamp to a chart x. We align to the closest
+  // history point so markers always sit on the line.
+  const eventMarkers = (events || []).map((e) => {
+    const eDaysAgo = Math.max(0, Math.min(days, (Date.now() - e.at) / 86400000));
+    // hist is ordered oldest → newest; index 0 = 30d ago, last = today
+    const idx = Math.round((days - eDaysAgo) * (hist.length - 1) / days);
+    const safeIdx = Math.max(0, Math.min(hist.length - 1, idx));
+    return {
+      x: xAt(safeIdx),
+      y: yAt(e.newPrice),
+      newPrice: e.newPrice,
+      prevPrice: e.prevPrice,
+      type: e.type
+    };
+  });
+
+  const todayPoint = hist[hist.length - 1];
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="hist-chart">
+      <defs>
+        <linearGradient id="hist-fill" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stopColor="var(--sx-primary)" stopOpacity="0.18"/>
+          <stop offset="1" stopColor="var(--sx-primary)" stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+
+      {/* Grid: top/bottom axis lines */}
+      <line x1={PAD.left} x2={W - PAD.right} y1={PAD.top} y2={PAD.top}
+            stroke="var(--sx-border-light)" strokeDasharray="2 4"/>
+      <line x1={PAD.left} x2={W - PAD.right} y1={H - PAD.bottom} y2={H - PAD.bottom}
+            stroke="var(--sx-border-light)"/>
+
+      {/* Floor reference (dashed amber) */}
+      <line
+        x1={PAD.left} x2={W - PAD.right}
+        y1={yAt(rec.floor)} y2={yAt(rec.floor)}
+        stroke="var(--sx-warning)" strokeWidth="1.5" strokeDasharray="6 4" opacity="0.7"
+      />
+      <text x={W - PAD.right + 6} y={yAt(rec.floor) + 4}
+            fontSize="11" fontWeight="600" fill="var(--sx-warning-fg)">
+        Floor {Rs(rec.floor)}
+      </text>
+
+      {/* Recommended target (when present, not blocked/hold) */}
+      {Number.isFinite(rec.recommended) && (
+        <>
+          <line
+            x1={PAD.left} x2={W - PAD.right}
+            y1={yAt(rec.recommended)} y2={yAt(rec.recommended)}
+            stroke="var(--sx-primary)" strokeWidth="1.5" strokeDasharray="3 3" opacity="0.55"
+          />
+          <text x={W - PAD.right + 6} y={yAt(rec.recommended) + 4}
+                fontSize="11" fontWeight="600" fill="var(--sx-primary)">
+            Target {Rs(rec.recommended)}
+          </text>
+        </>
+      )}
+
+      {/* Competitor median */}
+      <path d={compPath} fill="none"
+            stroke="var(--sx-text-muted)" strokeWidth="2" strokeDasharray="5 4" opacity="0.85"
+            vectorEffect="non-scaling-stroke"/>
+
+      {/* Our price area + line */}
+      <path d={ourPath + ` L${xAt(hist.length - 1)},${H - PAD.bottom} L${xAt(0)},${H - PAD.bottom} Z`}
+            fill="url(#hist-fill)"/>
+      <path d={ourPath} fill="none"
+            stroke="var(--sx-primary)" strokeWidth="2.5"
+            vectorEffect="non-scaling-stroke"/>
+
+      {/* Today endpoint dots */}
+      <circle cx={xAt(hist.length - 1)} cy={yAt(todayPoint.ourPrice)}
+              r="5" fill="var(--sx-primary)" stroke="#fff" strokeWidth="2"/>
+      <circle cx={xAt(hist.length - 1)} cy={yAt(todayPoint.competitorMedian)}
+              r="4" fill="var(--sx-text-muted)" stroke="#fff" strokeWidth="1.5"/>
+
+      {/* Our reprice event markers */}
+      {eventMarkers.map((m, i) => (
+        <g key={i}>
+          <circle cx={m.x} cy={m.y} r="6"
+                  fill={m.type === "repriced" ? "var(--sx-success)" : "var(--sx-warning)"}
+                  stroke="#fff" strokeWidth="2"/>
+          {/* Tiny vertical tick down to the axis so the marker reads as an event */}
+          <line x1={m.x} x2={m.x} y1={m.y + 7} y2={H - PAD.bottom - 1}
+                stroke={m.type === "repriced" ? "var(--sx-success)" : "var(--sx-warning)"}
+                strokeWidth="1" strokeDasharray="2 2" opacity="0.5"/>
+        </g>
+      ))}
+
+      {/* X-axis dates */}
+      <text x={PAD.left} y={H - PAD.bottom + 16}
+            fontSize="10.5" fill="var(--sx-text-muted)">30d ago</text>
+      <text x={PAD.left + innerW * 0.5} y={H - PAD.bottom + 16}
+            fontSize="10.5" fill="var(--sx-text-muted)" textAnchor="middle">15d ago</text>
+      <text x={W - PAD.right} y={H - PAD.bottom + 16}
+            fontSize="10.5" fill="var(--sx-text-muted)" textAnchor="end">Today</text>
+    </svg>
+  );
+}
+
+export function PriceHistoryPanel({ rec, compact = false }) {
+  const events = useRepriceEvents(rec.id);
+  const hasHistory = Array.isArray(rec.history30d) && rec.history30d.length > 1;
+
+  return (
+    <div className={"detail__panel hist-panel " + (compact ? "hist-panel--compact" : "")}>
+      <div className="hist-panel__head">
+        <span className="detail__title hist-panel__title">Price history · last 30 days</span>
+        <div className="hist-panel__legend">
+          <span className="hist-legend-item">
+            <span className="hist-swatch hist-swatch--ours"></span>Our price
+          </span>
+          <span className="hist-legend-item">
+            <span className="hist-swatch hist-swatch--comp"></span>Top competitor
+          </span>
+          {Number.isFinite(rec.recommended) && (
+            <span className="hist-legend-item">
+              <span className="hist-swatch hist-swatch--target"></span>Target
+            </span>
+          )}
+          <span className="hist-legend-item">
+            <span className="hist-swatch hist-swatch--floor"></span>Floor
+          </span>
+        </div>
+      </div>
+
+      {!hasHistory && events.length === 0 && (
+        <div className="hist-panel__empty-hint">
+          No price history captured yet. The chart will populate as you make repricing decisions.
+        </div>
+      )}
+
+      <div className="hist-panel__chart">
+        <PriceHistoryChart rec={rec} events={events}/>
+      </div>
+
+      {!compact && (
+        <div className="hist-panel__changes">
+          <div className="hist-panel__changes-title">Our changes on this listing</div>
+          {events.length === 0 ? (
+            <div className="hist-panel__changes-empty">No repricing actions yet.</div>
+          ) : (
+            <ul className="hist-changes-list">
+              {[...events].reverse().slice(0, 5).map((e, i) => {
+                const delta = (e.newPrice ?? 0) - (e.prevPrice ?? 0);
+                const up = delta > 0;
+                const reverted = e.type === "reprice_reverted";
+                return (
+                  <li key={i} className="hist-change">
+                    <span className={"hist-change__badge " + (reverted ? "hist-change__badge--reverted" : "hist-change__badge--applied")}>
+                      {reverted ? "Reverted" : "Applied"}
+                    </span>
+                    <span className="hist-change__when">{fmtAgo(e.at)}</span>
+                    <span className="hist-change__price">
+                      {Rs(e.prevPrice)} <span className="hist-change__arrow">→</span> {Rs(e.newPrice)}
+                    </span>
+                    <span className={"hist-change__delta " + (up ? "hist-change__delta--up" : "hist-change__delta--down")}>
+                      {up ? "+" : ""}{Rs(delta)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );
@@ -327,6 +571,11 @@ export function DetailPanel({
         </div>
 
         <MiniStats rec={rec}/>
+
+        {/* Price history chart — fills the previously empty left-column
+            space with the 30-day trend + reference lines (floor / target)
+            and markers for every reprice action we've taken on this SKU. */}
+        <PriceHistoryPanel rec={rec}/>
       </div>
 
       <div className="detail__col">

@@ -3,27 +3,23 @@
    MiniStats, EmptyState. Lifted from the design prototype; logic preserved. */
 
 import { useState } from "react";
+import Link from "next/link";
 import { Icon, Rs } from "./Icon";
 
 // ───── Topbar ──────────────────────────────────────────────────────
-export function Topbar({ pendingCount }) {
+export function Topbar() {
   return (
     <header className="topbar">
-      <div className="topbar__brand">
+      <Link href="/" className="topbar__brand" style={{textDecoration: "none", color: "inherit"}}>
         <div className="topbar__logo">O</div>
         <span className="topbar__wordmark">Opptra</span>
         <span className="topbar__product">Pricing&nbsp;Copilot</span>
-      </div>
+      </Link>
       <span className="topbar__spacer"></span>
-      <span className="topbar__chip">
-        <span className="dot"></span>
-        Live feeds healthy · 28 brands
-      </span>
-      <button className="topbar__icon-btn" aria-label="History"><Icon name="history" size={18} /></button>
-      <button className="topbar__icon-btn" aria-label="Notifications">
-        <Icon name="bell" size={18} />
-        {pendingCount > 0 && <span className="badge">{pendingCount}</span>}
-      </button>
+      <Link href="/audit" className="topbar__link" title="Audit trail">
+        <Icon name="history" size={14}/>
+        <span>Audit trail</span>
+      </Link>
       <div className="topbar__avatar" title="Ranjit K · Category Ops">RK</div>
     </header>
   );
@@ -61,6 +57,62 @@ export function StatTile({ label, value, sub, variant }) {
   );
 }
 
+// ───── Brand avatar ────────────────────────────────────────────────
+// Small "logo" tile — colored from a hash of the brand name so each
+// brand is consistently identifiable. Initials inside (1–2 chars).
+const BRAND_PALETTE = [
+  "#2e31be", "#7c3aed", "#ec4899", "#06b6d4", "#16a34a",
+  "#f59e0b", "#FF9800", "#9C27B0", "#00BCD4", "#0ea5e9", "#dc2626", "#0d9488"
+];
+function hashBrand(s) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h;
+}
+export function BrandAvatar({ brand, size = 36 }) {
+  const bg = BRAND_PALETTE[hashBrand(brand || "?") % BRAND_PALETTE.length];
+  const initials = String(brand || "?")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(w => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  return (
+    <div
+      className="brand-avatar"
+      title={brand}
+      style={{ background: bg, width: size, height: size, fontSize: Math.round(size * 0.38) }}
+    >
+      {initials}
+    </div>
+  );
+}
+
+// ───── Marketplace logo ────────────────────────────────────────────
+// Tiny marketplace-branded tile used in approval cards and identity
+// sub-lines. We use the marketplace's brand color and a 1-letter mark.
+// No external images — keeps the bundle clean and avoids licensing.
+const MARKETPLACE_VISUAL = {
+  "Amazon India": { bg: "#FF9900", fg: "#0F1111", letter: "a" },
+  "Noon UAE":     { bg: "#FEEE00", fg: "#1A1A1A", letter: "n" },
+  "Flipkart":     { bg: "#2874F0", fg: "#FFC220", letter: "f" }
+};
+export function MarketplaceLogo({ marketplace, size = 18, withLabel = false }) {
+  const v = MARKETPLACE_VISUAL[marketplace] || { bg: "#6b7280", fg: "#fff", letter: (marketplace || "?")[0] };
+  return (
+    <span className="marketplace-logo-wrap" title={marketplace}>
+      <span
+        className="marketplace-logo"
+        style={{ background: v.bg, color: v.fg, width: size, height: size, fontSize: Math.round(size * 0.62) }}
+      >
+        {v.letter}
+      </span>
+      {withLabel && <span className="marketplace-logo__label">{marketplace}</span>}
+    </span>
+  );
+}
+
 // ───── Confidence badge ────────────────────────────────────────────
 export function ConfidenceBadge({ confidence }) {
   if (!confidence) return null;
@@ -68,8 +120,13 @@ export function ConfidenceBadge({ confidence }) {
   return <span className={cls}><span className="confidence__dot"></span>{confidence}</span>;
 }
 
-// ───── Sparkline (row-bg vs card) ──────────────────────────────────
-export function Sparkline({ history, mode = "row-bg", height = 64 }) {
+// ───── Sparkline ────────────────────────────────────────────────────
+// Three modes:
+//   "strip"  — compact labeled chart for the top of each list row
+//              (visible lines, endpoint dots, no fade mask)
+//   "row-bg" — legacy faded-background look (kept for fallback callers)
+//   "card"   — full chart with axis grid and area fill (detail panel)
+export function Sparkline({ history, mode = "strip", height = 64 }) {
   if (!history || history.length === 0) return null;
   const min = Math.min(...history.map(h => Math.min(h.ourPrice, h.competitorMedian)));
   const max = Math.max(...history.map(h => Math.max(h.ourPrice, h.competitorMedian)));
@@ -80,6 +137,24 @@ export function Sparkline({ history, mode = "row-bg", height = 64 }) {
   const y = (v) => H - ((v - lo) / (hi - lo)) * H;
   const ours = history.map((d, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(d.ourPrice)}`).join(" ");
   const comp = history.map((d, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(d.competitorMedian)}`).join(" ");
+  const lastOur = history[history.length - 1].ourPrice;
+  const lastComp = history[history.length - 1].competitorMedian;
+
+  if (mode === "strip") {
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        {/* subtle horizontal midline */}
+        <line x1="0" x2={W} y1={H/2} y2={H/2} stroke="var(--sx-border-light)" strokeWidth="0.75" strokeDasharray="3 5" opacity="0.6"/>
+        {/* competitor (dashed grey) */}
+        <path d={comp} fill="none" stroke="var(--sx-text-muted)" strokeWidth="2" strokeDasharray="4 3" opacity="0.75" vectorEffect="non-scaling-stroke"/>
+        {/* ours (solid indigo) */}
+        <path d={ours} fill="none" stroke="var(--sx-primary)" strokeWidth="2.2" opacity="0.9" vectorEffect="non-scaling-stroke"/>
+        {/* endpoint dots */}
+        <circle cx={x(history.length - 1)} cy={y(lastOur)} r="6" fill="var(--sx-primary)" stroke="#fff" strokeWidth="2"/>
+        <circle cx={x(history.length - 1)} cy={y(lastComp)} r="4" fill="var(--sx-text-muted)" stroke="#fff" strokeWidth="1.5"/>
+      </svg>
+    );
+  }
 
   if (mode === "row-bg") {
     return (
@@ -114,7 +189,7 @@ export function Sparkline({ history, mode = "row-bg", height = 64 }) {
       <path d={comp} fill="none" stroke="var(--sx-text-muted)" strokeWidth="2.5" strokeDasharray="5 4"/>
       <path d={ours + ` L${W},${H} L0,${H} Z`} fill="url(#our-fill)"/>
       <path d={ours} fill="none" stroke="var(--sx-primary)" strokeWidth="2.5"/>
-      <circle cx={x(history.length - 1)} cy={y(history[history.length-1].ourPrice)} r="5" fill="var(--sx-primary)" stroke="#fff" strokeWidth="2"/>
+      <circle cx={x(history.length - 1)} cy={y(lastOur)} r="5" fill="var(--sx-primary)" stroke="#fff" strokeWidth="2"/>
     </svg>
   );
 }
@@ -132,8 +207,14 @@ export function FlagChip({ pattern }) {
 }
 
 // ───── Competitor row (collapsible) ────────────────────────────────
-export function CompRow({ comp, isOurs, isLeader, ourPrice }) {
+// Only renders fields we actually have. `buyBoxShare` and `lastMove*`
+// come from richer feeds we don't have in the current upload schema —
+// we hide them when missing rather than fabricating values.
+export function CompRow({ comp, isOurs, isLeader, ourPrice, buyBoxStatus }) {
   const [open, setOpen] = useState(false);
+  const hasMove = comp?.lastMoveDirection != null && comp?.lastMoveSize != null;
+  const hasShare = comp?.buyBoxShare != null;
+
   return (
     <div className={"comp-row " + (isOurs ? "comp-row--ours " : "") + (isLeader ? "comp-row--leader " : "") + (open ? "comp-row--expanded" : "")} onClick={() => setOpen(o => !o)}>
       <div className="comp-row__top">
@@ -142,29 +223,35 @@ export function CompRow({ comp, isOurs, isLeader, ourPrice }) {
           {isLeader && !isOurs && <span className="comp-row__leader-tag">Buy Box</span>}
         </span>
         <span className="comp-row__price">{Rs(isOurs ? ourPrice : comp.price)}</span>
-        <span className="comp-row__bbox">
-          <span className="comp-row__bbox-bar"><i style={{width: (comp.buyBoxShare || 0) + "%"}}></i></span>
-          {(comp.buyBoxShare ?? 0)}%
-        </span>
+        {isOurs && buyBoxStatus ? (
+          <span className={"comp-row__status comp-row__status--" + buyBoxStatus.toLowerCase()}>
+            Buy Box {buyBoxStatus}
+          </span>
+        ) : hasShare ? (
+          <span className="comp-row__bbox">
+            <span className="comp-row__bbox-bar"><i style={{width: comp.buyBoxShare + "%"}}></i></span>
+            {comp.buyBoxShare}%
+          </span>
+        ) : (
+          <span className="comp-row__bbox comp-row__bbox--na" title="No share data in the upload">—</span>
+        )}
         <span className="comp-row__chev"><Icon name="chevronDown" size={14}/></span>
       </div>
       {open && !isOurs && (
         <div className="comp-row__detail">
-          <div className="comp-row__detail-cell">
-            <strong>Last move</strong>
-            {comp.lastMoveDirection === "down" ? "↓" : "↑"} {Rs(comp.lastMoveSize)}{" "}
-            <span className="muted">({comp.lastMoveDaysAgo === 0 ? "today" : comp.lastMoveDaysAgo + "d ago"})</span>
-          </div>
+          {hasMove && (
+            <div className="comp-row__detail-cell">
+              <strong>Last move</strong>
+              {comp.lastMoveDirection === "down" ? "↓" : "↑"} {Rs(comp.lastMoveSize)}{" "}
+              <span className="muted">({comp.lastMoveDaysAgo === 0 ? "today" : comp.lastMoveDaysAgo + "d ago"})</span>
+            </div>
+          )}
           <div className="comp-row__detail-cell">
             <strong>Gap vs us</strong>
             <span className="tabular" style={{color: comp.price < ourPrice ? "var(--sx-error)" : "var(--sx-success)"}}>
               {comp.price < ourPrice ? "−" : "+"}{Rs(Math.abs(comp.price - ourPrice))}{" "}
               ({((comp.price - ourPrice) / ourPrice * 100).toFixed(1)}%)
             </span>
-          </div>
-          <div className="comp-row__detail-cell">
-            <strong>Buy Box share</strong>
-            <span className="tabular">{comp.buyBoxShare}% (last 7d)</span>
           </div>
         </div>
       )}
@@ -289,6 +376,128 @@ export function SkipReasonModal({ rec, onCancel, onSubmit }) {
         <div className="modal__actions">
           <button className="btn btn--ghost" onClick={onCancel}>Cancel</button>
           <button className="btn btn--primary" onClick={() => onSubmit({ reason, note })}>Skip &amp; log reason</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ───── Send-for-approval modal ─────────────────────────────────────
+// Opens when Ranjit clicks "Send for approval" on a row or in the detail
+// panel. Shows the engine's price summary + AI rec + Manager's Note as
+// read-only context, then asks for a free-text note + urgency. The
+// approval card on the Approvals page renders the full snapshot.
+export function SendApprovalModal({ target, aiData, approver, onCancel, onSubmit }) {
+  const [note, setNote] = useState("");
+  const [urgency, setUrgency] = useState("normal");
+  if (!target) return null;
+
+  const { rec, price } = target;
+  const delta = price - rec.ourPrice;
+  const isBlocked = rec.bucket === "blocked";
+  const aiRec = aiData?.rec || rec.fallbackRec;
+  const aiNote = aiData?.note || rec.fallbackNote || "";
+
+  const submit = () => onSubmit({ note: note.trim(), urgency, aiRec, aiNote });
+
+  return (
+    <div className="modal-scrim" onClick={onCancel}>
+      <div className="modal send-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="send-modal__head">
+          <div className="modal__title">Send for approval — {rec.sku}</div>
+          <div className="modal__desc">
+            {rec.name} · {rec.brand} · {rec.marketplace}
+          </div>
+        </div>
+
+        {/* Price summary using the same box style as the row */}
+        <div className="send-modal__prices">
+          <div className="price-box price-box--neutral">
+            <span className="price-box__label">NOW</span>
+            <span className="price-box__value">{Rs(rec.ourPrice)}</span>
+          </div>
+          <Icon name="arrowRight" size={14}/>
+          <div className={"price-box " + (isBlocked ? "price-box--blocked" : (delta > 0 ? "price-box--up" : "price-box--down"))}>
+            <span className="price-box__label">TARGET</span>
+            <span className="price-box__value">{isBlocked ? "HOLD" : Rs(price)}</span>
+            {!isBlocked && delta !== 0 && (
+              <span className={"price-box__delta " + (delta > 0 ? "price-box__delta--up" : "price-box__delta--down")}>
+                {delta > 0 ? "+" : ""}{Rs(delta)} {delta > 0 ? "↑" : "↓"}
+              </span>
+            )}
+          </div>
+          {!isBlocked && (
+            <span className="margin-pill">
+              {rec.resultingMarginPct.toFixed(1)}% <span className="margin-pill__sub">margin</span>
+            </span>
+          )}
+        </div>
+
+        {/* AI context — read-only snapshot that gets attached to the approval */}
+        <div className="send-modal__ai">
+          <div className="send-modal__ai-row">
+            <div className="send-modal__ai-icon"><Icon name="sparkle" size={11}/></div>
+            <div className="send-modal__ai-body">
+              <div className="send-modal__ai-label">AI recommendation</div>
+              <div className="send-modal__ai-text">{aiRec}</div>
+            </div>
+          </div>
+          {aiNote && (
+            <div className="send-modal__ai-row">
+              <div className="send-modal__ai-icon send-modal__ai-icon--note"><Icon name="info" size={11}/></div>
+              <div className="send-modal__ai-body">
+                <div className="send-modal__ai-label">Manager&apos;s Note</div>
+                <div className="send-modal__ai-text">{aiNote}</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Approver + urgency */}
+        <div className="send-modal__meta">
+          <div className="send-modal__meta-row">
+            <span className="send-modal__meta-label">Approver</span>
+            <span className="send-modal__meta-value">{approver}</span>
+          </div>
+          <div className="send-modal__meta-row">
+            <span className="send-modal__meta-label">Urgency</span>
+            <div className="urgency-toggle">
+              <button
+                type="button"
+                className={"urgency-toggle__btn " + (urgency === "normal" ? "urgency-toggle__btn--active" : "")}
+                onClick={() => setUrgency("normal")}
+              >Normal</button>
+              <button
+                type="button"
+                className={"urgency-toggle__btn urgency-toggle__btn--urgent " + (urgency === "urgent" ? "urgency-toggle__btn--active" : "")}
+                onClick={() => setUrgency("urgent")}
+              >
+                <Icon name="flame" size={10}/> Urgent
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Free-text note from Ranjit */}
+        <div className="send-modal__note">
+          <label className="send-modal__note-label">
+            Note for the approver <span className="send-modal__note-hint">(optional but helpful)</span>
+          </label>
+          <textarea
+            className="modal__textarea"
+            placeholder="e.g. Customer flagged this in support, please prioritize."
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+            autoFocus
+          />
+        </div>
+
+        <div className="modal__actions">
+          <button className="btn btn--ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn btn--primary" onClick={submit}>
+            <Icon name="send" size={12}/> Send to {approver.split(" ")[0]} at {Rs(price)}
+          </button>
         </div>
       </div>
     </div>

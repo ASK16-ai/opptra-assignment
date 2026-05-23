@@ -48,6 +48,8 @@ export default async function handler(req, res) {
     res.status(200).json({
       rec: rec.fallbackRec,
       note: rec.fallbackNote || "",
+      reasoning_steps: rec.fallbackReasoningSteps || [],
+      forecast: rec.forecast,
       source: "fallback",
       reason: "no_api_key"
     });
@@ -63,8 +65,7 @@ export default async function handler(req, res) {
         { role: "system", content: "You write tight pricing recommendations for an ops lead. Output JSON only. Never recommend a price below the margin floor in the context." },
         { role: "user", content: prompt }
       ],
-      temperature: 0.3,
-      max_tokens: 220,
+      max_completion_tokens: 10000,
       response_format: { type: "json_object" }
     });
 
@@ -82,6 +83,21 @@ export default async function handler(req, res) {
 
     let recText = String(parsed.rec || "").trim();
     let noteText = String(parsed.note || "").trim();
+    let reasoningSteps = Array.isArray(parsed.reasoning_steps) ? parsed.reasoning_steps : null;
+
+    // Sanitize reasoning steps — keep only well-shaped entries.
+    if (reasoningSteps) {
+      reasoningSteps = reasoningSteps
+        .filter(s => s && (s.factor || s.value))
+        .map(s => ({
+          factor: String(s.factor || "").trim(),
+          value: String(s.value || "").trim(),
+          weight: ["high", "medium", "low", "final"].includes(s.weight) ? s.weight : "medium",
+          takeaway: String(s.takeaway || "").trim()
+        }))
+        .filter(s => s.factor || s.takeaway);
+      if (reasoningSteps.length === 0) reasoningSteps = null;
+    }
 
     // Guardrail: if the LLM tries to recommend a price below the floor in
     // its sentence, reject and use fallback. We do a soft regex check —
@@ -90,6 +106,8 @@ export default async function handler(req, res) {
       res.status(200).json({
         rec: rec.fallbackRec,
         note: rec.fallbackNote || "",
+        reasoning_steps: rec.fallbackReasoningSteps || [],
+        forecast: rec.forecast,
         source: "fallback",
         reason: "floor_violation_in_text"
       });
@@ -100,6 +118,8 @@ export default async function handler(req, res) {
       res.status(200).json({
         rec: rec.fallbackRec,
         note: rec.fallbackNote || "",
+        reasoning_steps: rec.fallbackReasoningSteps || [],
+        forecast: rec.forecast,
         source: "fallback",
         reason: "empty_rec"
       });
@@ -109,6 +129,9 @@ export default async function handler(req, res) {
     res.status(200).json({
       rec: recText,
       note: noteText,
+      // Fall back to engine-generated steps if the LLM didn't return any.
+      reasoning_steps: reasoningSteps || rec.fallbackReasoningSteps || [],
+      forecast: rec.forecast,
       source: "ai",
       model: MODEL
     });
@@ -117,23 +140,40 @@ export default async function handler(req, res) {
     res.status(200).json({
       rec: rec.fallbackRec,
       note: rec.fallbackNote || "",
+      reasoning_steps: rec.fallbackReasoningSteps || [],
+      forecast: rec.forecast,
       source: "fallback",
       reason: "api_error"
     });
   }
 }
 
-// Scan the recommendation sentence for any Rs.NNN mention that's below the
-// margin floor. This is a defensive guard; the prompt explicitly forbids
-// the LLM from inventing a different price, but we don't trust the model
-// to follow that rule 100% of the time.
+// Floor-violation guard for the LLM's sentence.
+//
+// The deterministic engine already picks the target price within the safe
+// range, and the prompt tells the LLM to use that price verbatim. This
+// scan is a defense in depth: if the LARGEST Rs.NNN amount mentioned in
+// the sentence is below floor, the LLM is clearly proposing to sell
+// below floor and we reject.
+//
+// We use the max (not any) because a legitimate sentence mentions both
+// the target price (large) and small deltas like "Rs.10 below comp",
+// "Rs.139 above floor", "sacrifices Rs.110/unit" — those small numbers
+// would false-positive a "scan every amount" rule.
 function containsBelowFloorPrice(text, floor) {
   if (!text || typeof text !== "string" || !floor) return false;
   const re = /Rs\.?\s*([0-9][\d,]*)/gi;
+  let maxFound = 0;
+  let any = false;
   let m;
   while ((m = re.exec(text)) !== null) {
     const n = Number(String(m[1]).replace(/,/g, ""));
-    if (Number.isFinite(n) && n < floor) return true;
+    if (Number.isFinite(n)) {
+      any = true;
+      if (n > maxFound) maxFound = n;
+    }
   }
-  return false;
+  // If no Rs amount at all (unusual but not a violation), let it through.
+  if (!any) return false;
+  return maxFound < floor;
 }

@@ -8,9 +8,10 @@
    recommendation. */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Icon } from "../components/Icon";
 import {
-  Topbar, SubNav, StatTile, ToastRegion, SkipReasonModal
+  Topbar, SubNav, StatTile, ToastRegion, SkipReasonModal, SendApprovalModal
 } from "../components/Primitives";
 import {
   MarketplaceSkuView, SkuView, BrandView, ApprovalsView
@@ -22,6 +23,15 @@ import { usePersistedState } from "../lib/usePersistedState";
 
 const TONE_DEFAULT = "friendly";
 const APPROVER_DEFAULT = "Priya Iyer (Pricing Mgr)";
+
+// ─── Date helpers for the From/To listing filter ──────────────────
+const toISODate = (d) => {
+  const x = new Date(d);
+  const off = x.getTimezoneOffset() * 60000;
+  return new Date(x.getTime() - off).toISOString().slice(0, 10);
+};
+const todayISO = () => toISODate(Date.now());
+const daysAgoISO = (n) => toISODate(Date.now() - n * 86400000);
 
 // ─── Fetch one recommendation from the API route ─────────────────────
 async function fetchAi(rec, tone) {
@@ -35,11 +45,21 @@ async function fetchAi(rec, tone) {
     return {
       rec: data.rec || rec.fallbackRec,
       note: data.note || rec.fallbackNote || "",
+      reasoning_steps: Array.isArray(data.reasoning_steps) && data.reasoning_steps.length
+        ? data.reasoning_steps
+        : (rec.fallbackReasoningSteps || []),
+      forecast: data.forecast || rec.forecast || null,
       source: data.source || "fallback"
     };
   } catch (err) {
     console.warn("AI call failed for", rec.id, err);
-    return { rec: rec.fallbackRec, note: rec.fallbackNote || "", source: "fallback" };
+    return {
+      rec: rec.fallbackRec,
+      note: rec.fallbackNote || "",
+      reasoning_steps: rec.fallbackReasoningSteps || [],
+      forecast: rec.forecast || null,
+      source: "fallback"
+    };
   }
 }
 
@@ -50,8 +70,64 @@ export default function Home() {
   const [uploadedListings, setUploadedListings] = usePersistedState("opptra-uploaded", null);
   const [uploadedFilename, setUploadedFilename] = usePersistedState("opptra-uploaded-name", null);
 
-  const listings = uploadedListings && uploadedListings.length > 0 ? uploadedListings : DEMO_LISTINGS;
-  const isUploaded = !!(uploadedListings && uploadedListings.length > 0);
+  // Sanitize uploads on read. Two cases to handle:
+  //   1. Cached uploads from older builds — these had fabricated competitor
+  //      names (HomeKraft / F-PrimeHome / etc.) plus invented buyBoxShare
+  //      and last-move data. Only the leader's price was real, so we
+  //      collapse to that single entry.
+  //   2. New multi-competitor uploads — every entry carries a real price
+  //      from a CSV row. Keep them all, sort by price ascending so the
+  //      leader (price-to-beat) is first, and number them generically.
+  const sanitizedUploaded = useMemo(() => {
+    if (!Array.isArray(uploadedListings)) return null;
+    return uploadedListings.map(l => {
+      const cs = l.competitors || [];
+      const hasFakeFields = cs.some(c => c.buyBoxShare != null || c.lastMoveDirection != null);
+      let kept;
+      if (hasFakeFields) {
+        const leader = cs.find(c => c.isLeader) || cs[0];
+        kept = leader ? [{ name: "Competitor", price: leader.price, isLeader: true }] : [];
+      } else {
+        const sorted = [...cs]
+          .filter(c => Number.isFinite(c?.price))
+          .sort((a, b) => a.price - b.price);
+        kept = sorted.map((c, i) => ({
+          // Preserve the real competitor_name from the upload when present;
+          // fall back to a generic "Competitor N" label only when missing.
+          name: c.name || (sorted.length > 1 ? `Competitor ${i + 1}` : "Competitor"),
+          price: c.price,
+          isLeader: i === 0
+        }));
+      }
+      return {
+        ...l,
+        competitors: kept,
+        topCompetitor: kept[0],
+        history30d: []
+      };
+    });
+  }, [uploadedListings]);
+  const allListings = sanitizedUploaded && sanitizedUploaded.length > 0 ? sanitizedUploaded : DEMO_LISTINGS;
+  const isUploaded = !!(sanitizedUploaded && sanitizedUploaded.length > 0);
+
+  // Listing-creation date filter — absolute From / To, ISO yyyy-mm-dd.
+  // Default window = last 7 days so the triage view starts on the freshest
+  // listings; user can widen the window manually for historical work.
+  const [dateFrom, setDateFrom] = usePersistedState("opptra-date-from", daysAgoISO(7));
+  const [dateTo, setDateTo] = usePersistedState("opptra-date-to", todayISO());
+
+  // Apply date filter to the source listings before computing recs.
+  // Listings without a listedAt timestamp are excluded from a date-bounded
+  // view (we can't place them on the timeline).
+  const listings = useMemo(() => {
+    const fromMs = dateFrom ? new Date(dateFrom + "T00:00:00").getTime() : -Infinity;
+    const toMs = dateTo ? new Date(dateTo + "T23:59:59.999").getTime() : Infinity;
+    if (!dateFrom && !dateTo) return allListings;
+    return allListings.filter(l => {
+      if (l.listedAt == null) return false;
+      return l.listedAt >= fromMs && l.listedAt <= toMs;
+    });
+  }, [allListings, dateFrom, dateTo]);
 
   // Recompute engine outputs whenever data changes
   const recs = useMemo(() => computeAll(listings, GUT_RULES), [listings]);
@@ -69,9 +145,12 @@ export default function Home() {
   // Which row is expanded — only one at a time across all views
   const [expandedId, setExpandedId] = useState(null);
 
-  // AI state per listing id
-  const [aiBySku, setAiBySku] = useState({});
-  const [aiLoading, setAiLoading] = useState(true);
+  // AI state per listing id — persisted to localStorage so a page reload
+  // does NOT re-fire every /api/recommend call. Entries are invalidated
+  // only when a new upload replaces the dataset (see onUploadLoaded) or
+  // the user explicitly hits "Re-run AI".
+  const [aiBySku, setAiBySku, aiCacheHydrated] = usePersistedState("opptra-ai-cache", {});
+  const [aiLoading, setAiLoading] = useState(false);
   const [aiSource, setAiSource] = useState("loading");
 
   // Persisted action state
@@ -79,8 +158,17 @@ export default function Home() {
   const [appliedBySku, setAppliedBySku] = usePersistedState("opptra-applied", {});
   const [skippedBySku, setSkippedBySku] = usePersistedState("opptra-skipped", {});
 
+  // Append-only audit trail. Every user-initiated mutation appends an
+  // entry; the /audit page reads this directly. Filter-independent —
+  // entries persist regardless of the active date window above.
+  const [auditLog, setAuditLog] = usePersistedState("opptra-audit-log", []);
+  const appendAudit = useCallback((entry) => {
+    setAuditLog(prev => [{ at: Date.now(), ...entry }, ...prev]);
+  }, [setAuditLog]);
+
   const [skipTarget, setSkipTarget] = useState(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [sendTarget, setSendTarget] = useState(null); // { rec, price } | null
 
   // Toasts
   const [toasts, setToasts] = useState([]);
@@ -94,20 +182,52 @@ export default function Home() {
   const dismissToast = useCallback((id) => setToasts(ts => ts.filter(t => t.id !== id)), []);
 
   // ─── AI fetch orchestrator ─────────────────────────────────────────
-  const fetchAll = useCallback(async () => {
+  // Two paths:
+  //   fetchMissing — called automatically; only hits the API for listings
+  //                  that aren't already in the persisted cache.
+  //   fetchAll     — called by the "Re-run AI" button; wipes the cache
+  //                  for the current rec set and re-fetches everything.
+  const fetchFor = useCallback(async (toFetch) => {
+    if (toFetch.length === 0) return;
     setAiLoading(true);
-    setAiBySku({});
     let anyAi = false;
-    await Promise.all(recs.map(async (r) => {
+    await Promise.all(toFetch.map(async (r) => {
       const out = await fetchAi(r, TONE_DEFAULT);
       if (out.source === "ai") anyAi = true;
       setAiBySku(prev => ({ ...prev, [r.id]: out }));
     }));
     setAiLoading(false);
     setAiSource(anyAi ? "ai" : "fallback");
-  }, [recs]);
+  }, [setAiBySku]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  const fetchAll = useCallback(async () => {
+    // Wipe just the entries for the current rec set, then refetch.
+    setAiBySku(prev => {
+      const next = { ...prev };
+      recs.forEach(r => { delete next[r.id]; });
+      return next;
+    });
+    await fetchFor(recs);
+  }, [recs, fetchFor, setAiBySku]);
+
+  // Fire only for listings that aren't cached yet — and only after the
+  // persisted cache has hydrated from localStorage (otherwise the first
+  // render would see an empty {} and refetch everything).
+  useEffect(() => {
+    if (!aiCacheHydrated) return;
+    const missing = recs.filter(r => !aiBySku[r.id]);
+    if (missing.length === 0) {
+      // Already-cached — mark source from any existing entry for the badge.
+      const sample = recs.map(r => aiBySku[r.id]).find(Boolean);
+      if (sample) setAiSource(sample.source === "ai" ? "ai" : "fallback");
+      return;
+    }
+    fetchFor(missing);
+    // intentionally not depending on aiBySku — we read it once per recs change
+    // and let fetchFor write incrementally. Re-running this effect on every
+    // cache write would cause cascading refetches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recs, aiCacheHydrated, fetchFor]);
 
   // ─── Tick approval clocks ──────────────────────────────────────────
   const [nowTick, setNowTick] = useState(0);
@@ -127,18 +247,46 @@ export default function Home() {
   }, [approvalsBySku, nowTick]);
 
   // ─── Handlers ───────────────────────────────────────────────────────
+  // Clicking "Send for approval" on a row opens the modal first so Ranjit
+  // can add a note + urgency; the actual mutation happens in onConfirmSend.
   const onSendForApproval = useCallback((rec, price) => {
+    setSendTarget({ rec, price });
+  }, []);
+
+  const onConfirmSend = useCallback(({ note, urgency, aiRec, aiNote }) => {
+    if (!sendTarget) return;
+    const { rec, price } = sendTarget;
     setApprovalsBySku(prev => ({
       ...prev,
       [rec.id]: {
         proposedPrice: price,
         approver: APPROVER_DEFAULT,
         sentAt: Date.now(),
-        reminders: 0
+        reminders: 0,
+        // NEW: snapshotted context — frozen at the moment of sending so
+        // the approval card always shows what Ranjit actually saw.
+        note,
+        urgency,
+        aiRec,
+        aiNote,
+        bucket: rec.bucket,
+        ourPriceAtSend: rec.ourPrice,
+        marginSacrificeInr: rec.marginSacrificeInr,
+        marginGainInr: rec.marginGainInr,
+        resultingMarginPct: rec.resultingMarginPct
       }
     }));
-    pushToast(`Sent ${rec.sku} (${rec.marketplace}) to ${APPROVER_DEFAULT} for approval at Rs.${Number(price).toLocaleString("en-IN")}.`);
-  }, [pushToast, setApprovalsBySku]);
+    appendAudit({
+      type: "approval_sent",
+      id: rec.id, sku: rec.sku, brand: rec.brand, marketplace: rec.marketplace,
+      ourPrice: rec.ourPrice, proposedPrice: price,
+      approver: APPROVER_DEFAULT, urgency, note
+    });
+    setSendTarget(null);
+    pushToast(
+      `Sent ${rec.sku} to ${APPROVER_DEFAULT}${urgency === "urgent" ? " (URGENT)" : ""} at Rs.${Number(price).toLocaleString("en-IN")}.`
+    );
+  }, [sendTarget, pushToast, setApprovalsBySku, appendAudit]);
 
   const onRemind = useCallback((id, channel) => {
     setApprovalsBySku(prev => {
@@ -147,16 +295,25 @@ export default function Home() {
       return { ...prev, [id]: { ...ap, reminders: (ap.reminders || 0) + 1, lastReminderChannel: channel } };
     });
     const rec = recsById[id];
+    appendAudit({
+      type: "reminder_sent",
+      id, sku: rec?.sku, marketplace: rec?.marketplace,
+      channel, approver: APPROVER_DEFAULT
+    });
     pushToast(`Reminder sent via ${channel === "whatsapp" ? "WhatsApp" : "email"} to ${APPROVER_DEFAULT} for ${rec?.sku}.`);
-  }, [recsById, pushToast, setApprovalsBySku]);
+  }, [recsById, pushToast, setApprovalsBySku, appendAudit]);
 
   const onCancelApproval = useCallback((id) => {
     const rec = recsById[id];
     setApprovalsBySku(prev => {
       const next = { ...prev }; delete next[id]; return next;
     });
+    appendAudit({
+      type: "approval_recalled",
+      id, sku: rec?.sku, marketplace: rec?.marketplace
+    });
     pushToast(`Recalled ${rec?.sku} approval request.`);
-  }, [recsById, pushToast, setApprovalsBySku]);
+  }, [recsById, pushToast, setApprovalsBySku, appendAudit]);
 
   const onMarkApproved = useCallback((id) => {
     const rec = recsById[id];
@@ -164,37 +321,54 @@ export default function Home() {
     if (!ap) return;
     setAppliedBySku(prev => ({ ...prev, [id]: { newPrice: ap.proposedPrice, prevPrice: rec.ourPrice, at: Date.now() } }));
     setApprovalsBySku(prev => { const n = { ...prev }; delete n[id]; return n; });
+    appendAudit({
+      type: "repriced",
+      id, sku: rec?.sku, brand: rec?.brand, marketplace: rec?.marketplace,
+      prevPrice: rec?.ourPrice, newPrice: ap.proposedPrice
+    });
     pushToast(`${rec?.sku} approved & repriced to Rs.${Number(ap.proposedPrice).toLocaleString("en-IN")} on ${rec?.marketplace}.`);
-  }, [approvalsBySku, recsById, pushToast, setApprovalsBySku, setAppliedBySku]);
+  }, [approvalsBySku, recsById, pushToast, setApprovalsBySku, setAppliedBySku, appendAudit]);
 
   const onUndoApply = useCallback((id) => {
     const rec = recsById[id];
+    const ap = appliedBySku[id];
     setAppliedBySku(prev => { const n = { ...prev }; delete n[id]; return n; });
+    appendAudit({
+      type: "reprice_reverted",
+      id, sku: rec?.sku, marketplace: rec?.marketplace,
+      prevPrice: ap?.newPrice, newPrice: ap?.prevPrice
+    });
     pushToast(`${rec?.sku} change reverted.`);
-  }, [recsById, pushToast, setAppliedBySku]);
+  }, [recsById, pushToast, setAppliedBySku, appendAudit, appliedBySku]);
 
   const onOpenSkip = useCallback((id) => setSkipTarget(id), []);
   const onSubmitSkip = useCallback(({ reason, note }) => {
     if (!skipTarget) return;
     const rec = recsById[skipTarget];
     setSkippedBySku(prev => ({ ...prev, [skipTarget]: { reason, note, at: Date.now() } }));
+    appendAudit({
+      type: "skipped",
+      id: skipTarget, sku: rec?.sku, marketplace: rec?.marketplace,
+      reason, note
+    });
     setSkipTarget(null);
     console.info("[opptra] skip reason logged", { id: skipTarget, reason, note });
     pushToast(`${rec?.sku} skipped — logged "${reason}" for heuristic library.`);
-  }, [skipTarget, recsById, pushToast, setSkippedBySku]);
+  }, [skipTarget, recsById, pushToast, setSkippedBySku, appendAudit]);
 
   // ─── Upload handling ───────────────────────────────────────────────
   const onUploadLoaded = useCallback((newListings, filename) => {
     setUploadedListings(newListings);
     setUploadedFilename(filename);
     setUploadOpen(false);
-    // Clear stale action state so applied/skipped from a previous dataset
-    // doesn't leak into the new one.
+    // Clear stale action + AI cache state so applied/skipped/AI-text from
+    // a previous dataset doesn't leak into the new one.
     setApprovalsBySku({});
     setAppliedBySku({});
     setSkippedBySku({});
+    setAiBySku({});
     pushToast(`Imported ${newListings.length} listings from ${filename}.`);
-  }, [pushToast, setApprovalsBySku, setAppliedBySku, setSkippedBySku, setUploadedFilename, setUploadedListings]);
+  }, [pushToast, setApprovalsBySku, setAppliedBySku, setSkippedBySku, setAiBySku, setUploadedFilename, setUploadedListings]);
 
   const onResetDemo = useCallback(() => {
     setUploadedListings(null);
@@ -202,9 +376,10 @@ export default function Home() {
     setApprovalsBySku({});
     setAppliedBySku({});
     setSkippedBySku({});
+    setAiBySku({});
     setUploadOpen(false);
     pushToast("Reverted to demo data (8 SKUs from the case study).");
-  }, [pushToast, setApprovalsBySku, setAppliedBySku, setSkippedBySku, setUploadedFilename, setUploadedListings]);
+  }, [pushToast, setApprovalsBySku, setAppliedBySku, setSkippedBySku, setAiBySku, setUploadedFilename, setUploadedListings]);
 
   // ─── Counts for tab badges + stat strip ────────────────────────────
   const counts = useMemo(() => {
@@ -235,7 +410,7 @@ export default function Home() {
 
   return (
     <div className="app">
-      <Topbar pendingCount={counts.pending}/>
+      <Topbar/>
       <SubNav tabs={tabs} active={tab} onChange={setTab} meta={tabMeta}/>
 
       <main className="page">
@@ -256,16 +431,39 @@ export default function Home() {
                 </div>
               </div>
               <div className="page__head-actions">
-                <button className="btn btn--outlined btn--sm" onClick={() => setUploadOpen(true)}>
-                  <Icon name="download" size={13}/> Import data
-                </button>
-                <button className="btn btn--outlined btn--sm" onClick={fetchAll}>
-                  <Icon name="refresh" size={13}/> Refresh
-                </button>
+                <div className="date-range-filter" title="Filter listings by creation date">
+                  <span className="date-range-filter__label">Listed</span>
+                  <input
+                    type="date"
+                    aria-label="From date"
+                    value={dateFrom || ""}
+                    max={dateTo || undefined}
+                    onChange={(e) => setDateFrom(e.target.value || null)}
+                  />
+                  <span className="date-range-filter__sep">→</span>
+                  <input
+                    type="date"
+                    aria-label="To date"
+                    value={dateTo || ""}
+                    min={dateFrom || undefined}
+                    max={todayISO()}
+                    onChange={(e) => setDateTo(e.target.value || null)}
+                  />
+                  <button
+                    type="button"
+                    className="date-range-filter__reset"
+                    onClick={() => { setDateFrom(daysAgoISO(7)); setDateTo(todayISO()); }}
+                    title="Reset to last 7 days"
+                  >
+                    Last 7d
+                  </button>
+                </div>
+                <Link href="/import" className="btn btn--primary btn--lg">
+                  <Icon name="download" size={15}/> Import data
+                </Link>
               </div>
             </div>
 
-            <AiStrip status={aiLoading ? "loading" : aiSource} totalRecs={counts.recover + counts.raise + counts.blocked}/>
 
             <div className="stat-strip">
               <StatTile label="Buy Box Lost" value={counts.recover} sub="Need recovery" variant="alert"/>
@@ -351,33 +549,19 @@ export default function Home() {
         onCancel={() => setSkipTarget(null)}
         onSubmit={onSubmitSkip}
       />
+      <SendApprovalModal
+        target={sendTarget}
+        aiData={sendTarget ? aiBySku[sendTarget.rec.id] : null}
+        approver={APPROVER_DEFAULT}
+        onCancel={() => setSendTarget(null)}
+        onSubmit={onConfirmSend}
+      />
       <UploadModal
         open={uploadOpen}
         onCancel={() => setUploadOpen(false)}
         onLoaded={onUploadLoaded}
         onResetDemo={onResetDemo}
       />
-    </div>
-  );
-}
-
-// ─── AI strip ────────────────────────────────────────────────────────
-function AiStrip({ status, totalRecs }) {
-  let msg;
-  if (status === "loading") msg = `Reasoning over ${totalRecs} listings…`;
-  else if (status === "fallback") msg = `Recommendations generated from deterministic rules (add OPENAI_API_KEY to .env.local for GPT-4o-backed Manager's Notes).`;
-  else msg = `Recommendations generated by GPT-4o — each constrained by margin floor + cushion. Manager's Notes catch the pattern stuff rules can't.`;
-
-  return (
-    <div className="ai-strip">
-      <div className="ai-strip__icon"><Icon name="sparkle" size={14}/></div>
-      <div className="ai-strip__body">
-        <div className="ai-strip__title">Opptra AI · Pricing Copilot</div>
-        <div className="ai-strip__text">{msg}</div>
-      </div>
-      {status === "loading"
-        ? <span className="ai-strip__live"><span className="dot"></span>Thinking</span>
-        : <span className="ai-strip__live"><span className="dot"></span>{status === "ai" ? "Live" : "Fallback"}</span>}
     </div>
   );
 }

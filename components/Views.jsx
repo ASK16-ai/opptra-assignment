@@ -4,7 +4,7 @@
 import { useMemo, useState } from "react";
 import { Icon, Rs } from "./Icon";
 import { ListingRow } from "./ListingRow";
-import { EmptyState } from "./Primitives";
+import { EmptyState, BrandAvatar, MarketplaceLogo } from "./Primitives";
 import { GUT_RULES } from "../lib/heuristics";
 
 // ─── View 1: M × SKU listings, sorted by criticality ──────────────────
@@ -139,7 +139,40 @@ export function SkuView({ recs, aiBySku, aiLoading, approvalsBySku, appliedBySku
   );
 }
 
-// ─── View 3: Brand grouped ────────────────────────────────────────────
+// ─── View 3: Brand grouped — nested collapsible dropdowns ──────────────
+// Each brand is a top-level collapsible. Inside, listings are split into
+// two sub-groups: "Action needed" (recover/raise/blocked) and "Healthy"
+// (hold). Healthy is collapsed by default so the eye lands on action.
+const ACTION_BUCKETS = new Set(["recover", "raise", "blocked"]);
+
+function BrandGroup({ label, variant, listings, defaultOpen = true, rowProps }) {
+  const [open, setOpen] = useState(defaultOpen);
+  if (listings.length === 0) return null;
+  const variantPrefix = variant ? "brand-group--" + variant : "";
+  return (
+    <div className={"brand-group " + variantPrefix}>
+      <button className="brand-group__head" onClick={() => setOpen(o => !o)}>
+        <span className={"brand-group__chev " + (open ? "brand-group__chev--open" : "")}>
+          <Icon name="chevronDown" size={11}/>
+        </span>
+        <span className="brand-group__label">{label}</span>
+        <span className="brand-group__count">{listings.length}</span>
+      </button>
+      {open && (
+        <div className="brand-group__body">
+          {listings.map(rec => (
+            <ListingRow
+              key={rec.id}
+              rec={rec}
+              {...rowProps(rec)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function BrandView({ recs, aiBySku, aiLoading, approvalsBySku, appliedBySku, skippedBySku,
                      expandedId, setExpandedId, onSendForApproval, onSkip, onUndoApply }) {
   const brands = useMemo(() => {
@@ -160,41 +193,86 @@ export function BrandView({ recs, aiBySku, aiLoading, approvalsBySku, appliedByS
     });
   }, [recs]);
 
+  // Top-level brand open/closed state. By default the most-critical brand
+  // (first in the sort) is open; others are closed.
+  const [openBrand, setOpenBrand] = useState(() => brands[0]?.[0] || null);
+
+  const rowProps = (rec) => ({
+    aiData: aiBySku[rec.id],
+    aiLoading: aiLoading && !aiBySku[rec.id],
+    approval: approvalsBySku[rec.id],
+    applied: appliedBySku[rec.id],
+    expanded: expandedId === rec.id,
+    onExpand: () => setExpandedId(expandedId === rec.id ? null : rec.id),
+    onSendForApproval: (price) => onSendForApproval(rec, price),
+    onSkip: () => onSkip(rec.id),
+    onUndoApply: () => onUndoApply(rec.id)
+  });
+
   return (
     <div>
       {brands.map(([brand, listings]) => {
-        const recoverCount = listings.filter(r => r.bucket === "recover").length;
-        const moveTodayCount = listings.filter(r => r.daysSince === 0).length;
+        const visible = listings.filter(r => !skippedBySku[r.id]);
+        const actionNeeded = visible.filter(r => ACTION_BUCKETS.has(r.bucket));
+        const healthy = visible.filter(r => r.bucket === "hold");
+        const recoverCount = visible.filter(r => r.bucket === "recover").length;
+        const moveTodayCount = visible.filter(r => r.daysSince === 0).length;
         const portfolioWarn = moveTodayCount >= GUT_RULES.PORTFOLIO_LIMIT;
+        const isOpen = openBrand === brand;
+
         return (
-          <div className="brand-block" key={brand}>
-            <div className="brand-block__head">
-              <span className="brand-block__name">{brand}</span>
-              <span className="brand-block__count">{listings.length} listings · {recoverCount} need recovery</span>
+          <div className={"brand-block " + (isOpen ? "brand-block--open" : "")} key={brand}>
+            <button
+              className="brand-block__head"
+              onClick={() => setOpenBrand(isOpen ? null : brand)}
+            >
+              <BrandAvatar brand={brand} size={32}/>
+              <div className="brand-block__title">
+                <span className="brand-block__name">{brand}</span>
+                <span className="brand-block__count">
+                  {visible.length} listings ·{" "}
+                  <strong>{actionNeeded.length}</strong> need attention ·{" "}
+                  {healthy.length} healthy
+                </span>
+              </div>
+              {recoverCount > 0 && (
+                <span className="brand-block__pill brand-block__pill--alert">
+                  {recoverCount} recover
+                </span>
+              )}
               {portfolioWarn && (
                 <span className="brand-block__warn">
                   <Icon name="alert" size={10}/>
                   {moveTodayCount} moves today — at portfolio limit
                 </span>
               )}
-            </div>
-            <div className="brand-block__body">
-              {listings.filter(r => !skippedBySku[r.id]).map(rec => (
-                <ListingRow
-                  key={rec.id}
-                  rec={rec}
-                  aiData={aiBySku[rec.id]}
-                  aiLoading={aiLoading && !aiBySku[rec.id]}
-                  approval={approvalsBySku[rec.id]}
-                  applied={appliedBySku[rec.id]}
-                  expanded={expandedId === rec.id}
-                  onExpand={() => setExpandedId(expandedId === rec.id ? null : rec.id)}
-                  onSendForApproval={(price) => onSendForApproval(rec, price)}
-                  onSkip={() => onSkip(rec.id)}
-                  onUndoApply={() => onUndoApply(rec.id)}
+              <span className="brand-block__spacer"></span>
+              <span className={"brand-block__chev " + (isOpen ? "brand-block__chev--open" : "")}>
+                <Icon name="chevronDown" size={14}/>
+              </span>
+            </button>
+
+            {isOpen && (
+              <div className="brand-block__body">
+                <BrandGroup
+                  label="Action needed"
+                  variant="alert"
+                  listings={actionNeeded}
+                  defaultOpen={true}
+                  rowProps={rowProps}
                 />
-              ))}
-            </div>
+                <BrandGroup
+                  label="Healthy — no action"
+                  variant="ok"
+                  listings={healthy}
+                  defaultOpen={false}
+                  rowProps={rowProps}
+                />
+                {visible.length === 0 && (
+                  <EmptyState title="Nothing here" desc={`All ${brand} listings have been actioned or skipped.`}/>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
@@ -203,6 +281,10 @@ export function BrandView({ recs, aiBySku, aiLoading, approvalsBySku, appliedByS
 }
 
 // ─── View 4: Approvals (Ranjit's pending sends) ───────────────────────
+// Each card has three sections:
+//   1. Head    — identity + price flow + urgency badge
+//   2. Context — AI rec snapshot + Manager's Note snapshot + Ranjit's note
+//   3. Footer  — sent meta + reminder/approve/cancel actions
 export function ApprovalsView({ approvals, onRemind, onCancel, onMarkApproved, recsById }) {
   if (approvals.length === 0) {
     return <EmptyState title="Nothing pending" desc="No approvals out for review right now. Send a recommendation from any tab to start one."/>;
@@ -212,52 +294,126 @@ export function ApprovalsView({ approvals, onRemind, onCancel, onMarkApproved, r
       {approvals.map(ap => {
         const rec = recsById[ap.id];
         if (!rec) return null;
+        const ourPriceAtSend = ap.ourPriceAtSend ?? rec.ourPrice;
+        const delta = ap.proposedPrice - ourPriceAtSend;
+        const isUrgent = ap.urgency === "urgent";
+
         return (
-          <div className="approval-card" key={ap.id}>
-            <div className="approval-card__id">
-              <div className="approval-card__sku-row">
-                <span className="row__sku">{rec.sku}</span>
-                <span className="row__name" style={{maxWidth: "none"}}>{rec.name}</span>
+          <div className={"approval-card-v2 " + (isUrgent ? "approval-card-v2--urgent" : "")} key={ap.id}>
+            {/* ─── Head: identity + price flow + urgency ─── */}
+            <div className="approval-card-v2__head">
+              <div className="approval-card-v2__ident">
+                <BrandAvatar brand={rec.brand} size={32}/>
+                <div className="approval-card-v2__ident-text">
+                  <div className="approval-card-v2__ident-name">
+                    <span>{rec.name}</span>
+                    {isUrgent && (
+                      <span className="urgency-badge urgency-badge--urgent">
+                        <Icon name="flame" size={9}/> Urgent
+                      </span>
+                    )}
+                  </div>
+                  <div className="approval-card-v2__ident-sub">
+                    <span className="row__sku-small">{rec.sku}</span>
+                    <span>·</span>
+                    <span>{rec.brand}</span>
+                    <span>·</span>
+                    <MarketplaceLogo marketplace={rec.marketplace} size={14} withLabel/>
+                  </div>
+                </div>
               </div>
-              <div className="row__brand-line">
-                {rec.brand} · <span className="marketplace-pill">{rec.marketplace}</span>
+
+              <div className="approval-card-v2__price-flow">
+                <div className="price-box price-box--neutral">
+                  <span className="price-box__label">NOW</span>
+                  <span className="price-box__value">{Rs(ourPriceAtSend)}</span>
+                </div>
+                <Icon name="arrowRight" size={14} color="var(--sx-text-subtle)"/>
+                <div className={"price-box " + (delta > 0 ? "price-box--up" : "price-box--down")}>
+                  <span className="price-box__label">TARGET</span>
+                  <span className="price-box__value">{Rs(ap.proposedPrice)}</span>
+                  {delta !== 0 && (
+                    <span className={"price-box__delta " + (delta > 0 ? "price-box__delta--up" : "price-box__delta--down")}>
+                      {delta > 0 ? "+" : ""}{Rs(delta)} {delta > 0 ? "↑" : "↓"}
+                    </span>
+                  )}
+                </div>
+                {ap.resultingMarginPct != null && (
+                  <span className="margin-pill">
+                    {ap.resultingMarginPct.toFixed(1)}% <span className="margin-pill__sub">margin</span>
+                  </span>
+                )}
+                {rec.floor != null && (
+                  <span className="floor-pill" title="Minimum allowed price — the engine will never go below this">
+                    <span className="floor-pill__label">FLOOR</span>
+                    <span className="floor-pill__value">{Rs(rec.floor)}</span>
+                  </span>
+                )}
               </div>
             </div>
-            <div className="approval-card__pricing">
-              <span className="muted">From</span>
-              <span>{Rs(rec.ourPrice)}</span>
-              <span className="arrow"><Icon name="arrowRight" size={14}/></span>
-              <span className="muted">To</span>
-              <span className="target">{Rs(ap.proposedPrice)}</span>
-            </div>
-            <div className="approval-card__approver">
-              <div><strong>{ap.approver}</strong></div>
-              <div className="meta">
-                Sent {ap.sentMinAgo}m ago
-                {ap.reminders > 0 && <> · {ap.reminders} reminder{ap.reminders > 1 ? "s" : ""}</>}
+
+            {/* ─── Context block: AI rec, manager's note, Ranjit's note ─── */}
+            <div className="approval-card-v2__context">
+              <div className="ctx-row">
+                <div className="ctx-row__icon ctx-row__icon--ai"><Icon name="sparkle" size={11}/></div>
+                <div className="ctx-row__body">
+                  <div className="ctx-row__label">AI recommendation · snapshot at send time</div>
+                  <div className="ctx-row__text">{ap.aiRec || rec.fallbackRec}</div>
+                </div>
               </div>
-              <div style={{marginTop: 4}}>
+              {(ap.aiNote || rec.fallbackNote) && (
+                <div className="ctx-row">
+                  <div className="ctx-row__icon ctx-row__icon--note"><Icon name="info" size={11}/></div>
+                  <div className="ctx-row__body">
+                    <div className="ctx-row__label">Manager&apos;s Note · AI pattern callout</div>
+                    <div className="ctx-row__text">{ap.aiNote || rec.fallbackNote}</div>
+                  </div>
+                </div>
+              )}
+              <div className="ctx-row">
+                <div className="ctx-row__icon ctx-row__icon--user">RK</div>
+                <div className="ctx-row__body">
+                  <div className="ctx-row__label">Ranjit&apos;s note to approver</div>
+                  <div className={"ctx-row__text " + (ap.note ? "ctx-row__text--user" : "ctx-row__text--empty")}>
+                    {ap.note ? `"${ap.note}"` : "No note added"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ─── Footer: sent meta + actions ─── */}
+            <div className="approval-card-v2__footer">
+              <div className="approval-card-v2__meta">
+                <span>Sent to <strong>{ap.approver}</strong></span>
+                <span>·</span>
+                <span>{ap.sentMinAgo}m ago</span>
+                {ap.reminders > 0 && (
+                  <>
+                    <span>·</span>
+                    <span>{ap.reminders} reminder{ap.reminders > 1 ? "s" : ""} {ap.lastReminderChannel ? `(${ap.lastReminderChannel})` : ""}</span>
+                  </>
+                )}
                 {ap.reminders > 0
                   ? <span className="approval-status approval-status--reminded"><span className="dot"></span>Reminded</span>
                   : <span className="approval-status approval-status--pending"><span className="dot"></span>Pending</span>}
               </div>
-            </div>
-            <div className="approval-card__actions">
-              <button className="btn btn--outlined btn--sm" onClick={() => onRemind(ap.id, "whatsapp")} title="Send WhatsApp reminder">
-                <Icon name="whatsapp" size={12} color="#25D366"/>
-                WhatsApp
-              </button>
-              <button className="btn btn--outlined btn--sm" onClick={() => onRemind(ap.id, "email")} title="Send email reminder">
-                <Icon name="mail" size={12}/>
-                Email
-              </button>
-              <button className="btn btn--success btn--sm" onClick={() => onMarkApproved(ap.id)} title="Demo: mark as approved by manager">
-                <Icon name="check" size={12}/>
-                Mark approved
-              </button>
-              <button className="btn btn--ghost btn--sm" onClick={() => onCancel(ap.id)}>
-                <Icon name="x" size={12}/>
-              </button>
+              <div className="approval-card-v2__actions">
+                <button className="btn btn--outlined btn--sm" onClick={() => onRemind(ap.id, "whatsapp")} title="Send WhatsApp reminder">
+                  <Icon name="whatsapp" size={12} color="#25D366"/>
+                  WhatsApp
+                </button>
+                <button className="btn btn--outlined btn--sm" onClick={() => onRemind(ap.id, "email")} title="Send email reminder">
+                  <Icon name="mail" size={12}/>
+                  Email
+                </button>
+                <button className="btn btn--success btn--sm" onClick={() => onMarkApproved(ap.id)} title="Demo: mark as approved by manager">
+                  <Icon name="check" size={12}/>
+                  Mark approved
+                </button>
+                <button className="btn btn--ghost btn--sm" onClick={() => onCancel(ap.id)} title="Recall">
+                  <Icon name="x" size={12}/>
+                </button>
+              </div>
             </div>
           </div>
         );

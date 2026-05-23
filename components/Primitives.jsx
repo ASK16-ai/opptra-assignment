@@ -313,6 +313,20 @@ export function MiniStats({ rec }) {
     label: "Resulting margin",
     value: `${rec.resultingMarginPct.toFixed(1)}%`,
   });
+  // Optional category-lead inputs — only surface when the upload provided
+  // them. These give the lead a fast read of "is my own data being used?"
+  if (Number.isFinite(rec.ordersInPeriod) && Number.isFinite(rec.periodDays)) {
+    items.push({
+      label: "Orders (reported)",
+      value: `${rec.ordersInPeriod} in ${rec.periodDays}d  (${(rec.ordersInPeriod / rec.periodDays).toFixed(1)}/day)`,
+    });
+  }
+  if (Number.isFinite(rec.profitMargin)) {
+    items.push({
+      label: "Profit margin (reported)",
+      value: `${(rec.profitMargin * 100).toFixed(1)}%`,
+    });
+  }
   return (
     <div className="mini-stats">
       {items.map((it, i) => (

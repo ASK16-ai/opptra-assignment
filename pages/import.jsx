@@ -134,7 +134,9 @@ export default function ImportPage() {
                 <div className="import-step__title">Edit in Excel / Sheets</div>
                 <div className="import-step__desc">
                   Required columns: <code>sku · brand · marketplace · our_price · competitor_price · buy_box · margin_floor · last_changed</code>.
-                  Optional: <code>name · category · listed_at</code> (ISO date or yyyy-mm-dd).
+                  Optional: <code>name · category · listed_at · competitor_name · orders_in_period · period_days · profit_margin</code>.
+                  Add one row per competitor (same sku + marketplace) for multi-competitor stacks.
+                  <code>orders_in_period</code> / <code>period_days</code> feed the forecast with your own sales data; <code>profit_margin</code> accepts either a percent (22.5) or a fraction (0.225).
                   Buy-box accepts Won/Lost (or Yes/No). Marketplace accepts Amazon India, Noon UAE, Flipkart.
                 </div>
               </div>

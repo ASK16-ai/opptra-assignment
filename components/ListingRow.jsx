@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Icon, Rs } from "./Icon";
 import {
   Sparkline, FlagChip, ConfidenceBadge, BrandAvatar,
-  CompRow, RuleItem, ManagerNote, MiniStats, MarketplaceLogo
+  CompRow, RuleItem, MiniStats, MarketplaceLogo
 } from "./Primitives";
 import { GUT_RULES } from "../lib/heuristics";
 import { usePersistedState } from "../lib/usePersistedState";
@@ -555,8 +555,6 @@ export function DetailPanel({
   approval, applied,
   onSendForApproval, onSkip
 }) {
-  const aiNote = aiData?.note || rec.fallbackNote;
-
   return (
     <div className="detail">
       <div className="detail__col">
@@ -579,8 +577,6 @@ export function DetailPanel({
       </div>
 
       <div className="detail__col">
-        <ManagerNote note={aiNote} loading={aiLoading}/>
-
         {/* AI decision walkthrough — step-by-step reasoning with weights.
             Comes from the AI when on; otherwise from the engine fallback. */}
         <DecisionWalkthrough

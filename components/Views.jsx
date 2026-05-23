@@ -283,7 +283,7 @@ export function BrandView({ recs, aiBySku, aiLoading, approvalsBySku, appliedByS
 // ─── View 4: Approvals (Ranjit's pending sends) ───────────────────────
 // Each card has three sections:
 //   1. Head    — identity + price flow + urgency badge
-//   2. Context — AI rec snapshot + Manager's Note snapshot + Ranjit's note
+//   2. Context — AI rec snapshot + Ranjit's note
 //   3. Footer  — sent meta + reminder/approve/cancel actions
 export function ApprovalsView({ approvals, onRemind, onCancel, onMarkApproved, recsById }) {
   if (approvals.length === 0) {
@@ -361,15 +361,6 @@ export function ApprovalsView({ approvals, onRemind, onCancel, onMarkApproved, r
                   <div className="ctx-row__text">{ap.aiRec || rec.fallbackRec}</div>
                 </div>
               </div>
-              {(ap.aiNote || rec.fallbackNote) && (
-                <div className="ctx-row">
-                  <div className="ctx-row__icon ctx-row__icon--note"><Icon name="info" size={11}/></div>
-                  <div className="ctx-row__body">
-                    <div className="ctx-row__label">Manager&apos;s Note · AI pattern callout</div>
-                    <div className="ctx-row__text">{ap.aiNote || rec.fallbackNote}</div>
-                  </div>
-                </div>
-              )}
               <div className="ctx-row">
                 <div className="ctx-row__icon ctx-row__icon--user">RK</div>
                 <div className="ctx-row__body">

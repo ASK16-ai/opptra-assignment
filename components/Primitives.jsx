@@ -1,5 +1,5 @@
 /* Stateless presentation primitives: Topbar, SubNav, StatTile,
-   ConfidenceBadge, Sparkline, FlagChip, CompRow, RuleItem, ManagerNote,
+   ConfidenceBadge, Sparkline, FlagChip, CompRow, RuleItem,
    MiniStats, EmptyState. Lifted from the design prototype; logic preserved. */
 
 import { useState } from "react";
@@ -274,22 +274,6 @@ export function RuleItem({ rule }) {
   );
 }
 
-// ───── Manager's note ──────────────────────────────────────────────
-export function ManagerNote({ note, loading }) {
-  if (!loading && !note) return null;
-  return (
-    <div className="mgr-note">
-      <div className="mgr-note__icon"><Icon name="sparkle" size={12}/></div>
-      <div className="mgr-note__body">
-        <div className="mgr-note__label">Manager&apos;s Note · AI</div>
-        <div className="mgr-note__text">
-          {loading ? <span className="row__rec-shimmer"></span> : note}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ───── Mini stats grid (in detail panel) ───────────────────────────
 export function MiniStats({ rec }) {
   const items = [];
@@ -398,9 +382,9 @@ export function SkipReasonModal({ rec, onCancel, onSubmit }) {
 
 // ───── Send-for-approval modal ─────────────────────────────────────
 // Opens when Ranjit clicks "Send for approval" on a row or in the detail
-// panel. Shows the engine's price summary + AI rec + Manager's Note as
-// read-only context, then asks for a free-text note + urgency. The
-// approval card on the Approvals page renders the full snapshot.
+// panel. Shows the engine's price summary + AI rec as read-only context,
+// then asks for a free-text note + urgency. The approval card on the
+// Approvals page renders the full snapshot.
 export function SendApprovalModal({ target, aiData, approver, onCancel, onSubmit }) {
   const [note, setNote] = useState("");
   const [urgency, setUrgency] = useState("normal");
@@ -410,9 +394,8 @@ export function SendApprovalModal({ target, aiData, approver, onCancel, onSubmit
   const delta = price - rec.ourPrice;
   const isBlocked = rec.bucket === "blocked";
   const aiRec = aiData?.rec || rec.fallbackRec;
-  const aiNote = aiData?.note || rec.fallbackNote || "";
 
-  const submit = () => onSubmit({ note: note.trim(), urgency, aiRec, aiNote });
+  const submit = () => onSubmit({ note: note.trim(), urgency, aiRec });
 
   return (
     <div className="modal-scrim" onClick={onCancel}>
@@ -456,15 +439,6 @@ export function SendApprovalModal({ target, aiData, approver, onCancel, onSubmit
               <div className="send-modal__ai-text">{aiRec}</div>
             </div>
           </div>
-          {aiNote && (
-            <div className="send-modal__ai-row">
-              <div className="send-modal__ai-icon send-modal__ai-icon--note"><Icon name="info" size={11}/></div>
-              <div className="send-modal__ai-body">
-                <div className="send-modal__ai-label">Manager&apos;s Note</div>
-                <div className="send-modal__ai-text">{aiNote}</div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Approver + urgency */}

@@ -44,7 +44,6 @@ async function fetchAi(rec, tone) {
     const data = await res.json();
     return {
       rec: data.rec || rec.fallbackRec,
-      note: data.note || rec.fallbackNote || "",
       reasoning_steps: Array.isArray(data.reasoning_steps) && data.reasoning_steps.length
         ? data.reasoning_steps
         : (rec.fallbackReasoningSteps || []),
@@ -55,7 +54,6 @@ async function fetchAi(rec, tone) {
     console.warn("AI call failed for", rec.id, err);
     return {
       rec: rec.fallbackRec,
-      note: rec.fallbackNote || "",
       reasoning_steps: rec.fallbackReasoningSteps || [],
       forecast: rec.forecast || null,
       source: "fallback"
@@ -260,7 +258,7 @@ export default function Home() {
     setSendTarget({ rec, price });
   }, []);
 
-  const onConfirmSend = useCallback(({ note, urgency, aiRec, aiNote }) => {
+  const onConfirmSend = useCallback(({ note, urgency, aiRec }) => {
     if (!sendTarget) return;
     const { rec, price } = sendTarget;
     setApprovalsBySku(prev => ({
@@ -270,12 +268,11 @@ export default function Home() {
         approver: APPROVER_DEFAULT,
         sentAt: Date.now(),
         reminders: 0,
-        // NEW: snapshotted context — frozen at the moment of sending so
+        // Snapshotted context — frozen at the moment of sending so
         // the approval card always shows what Ranjit actually saw.
         note,
         urgency,
         aiRec,
-        aiNote,
         bucket: rec.bucket,
         ourPriceAtSend: rec.ourPrice,
         marginSacrificeInr: rec.marginSacrificeInr,

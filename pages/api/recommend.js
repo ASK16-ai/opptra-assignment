@@ -47,7 +47,6 @@ export default async function handler(req, res) {
   if (!client) {
     res.status(200).json({
       rec: rec.fallbackRec,
-      note: rec.fallbackNote || "",
       reasoning_steps: rec.fallbackReasoningSteps || [],
       forecast: rec.forecast,
       source: "fallback",
@@ -82,7 +81,6 @@ export default async function handler(req, res) {
     }
 
     let recText = String(parsed.rec || "").trim();
-    let noteText = String(parsed.note || "").trim();
     let reasoningSteps = Array.isArray(parsed.reasoning_steps) ? parsed.reasoning_steps : null;
 
     // Sanitize reasoning steps — keep only well-shaped entries.
@@ -105,8 +103,7 @@ export default async function handler(req, res) {
     if (containsBelowFloorPrice(recText, listing.floor)) {
       res.status(200).json({
         rec: rec.fallbackRec,
-        note: rec.fallbackNote || "",
-        reasoning_steps: rec.fallbackReasoningSteps || [],
+          reasoning_steps: rec.fallbackReasoningSteps || [],
         forecast: rec.forecast,
         source: "fallback",
         reason: "floor_violation_in_text"
@@ -117,8 +114,7 @@ export default async function handler(req, res) {
     if (!recText) {
       res.status(200).json({
         rec: rec.fallbackRec,
-        note: rec.fallbackNote || "",
-        reasoning_steps: rec.fallbackReasoningSteps || [],
+          reasoning_steps: rec.fallbackReasoningSteps || [],
         forecast: rec.forecast,
         source: "fallback",
         reason: "empty_rec"
@@ -128,7 +124,6 @@ export default async function handler(req, res) {
 
     res.status(200).json({
       rec: recText,
-      note: noteText,
       // Fall back to engine-generated steps if the LLM didn't return any.
       reasoning_steps: reasoningSteps || rec.fallbackReasoningSteps || [],
       forecast: rec.forecast,
@@ -139,7 +134,6 @@ export default async function handler(req, res) {
     console.warn("[recommend] OpenAI call failed for", listing.id, err?.message || err);
     res.status(200).json({
       rec: rec.fallbackRec,
-      note: rec.fallbackNote || "",
       reasoning_steps: rec.fallbackReasoningSteps || [],
       forecast: rec.forecast,
       source: "fallback",

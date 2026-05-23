@@ -1,0 +1,112 @@
+/* Upload modal — additive styles. */
+
+.upload-modal {
+  width: min(560px, 90vw);
+}
+
+.upload-drop {
+  border: 2px dashed var(--sx-border-gray);
+  border-radius: var(--sx-radius-md);
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--sx-bg-muted);
+  transition: border-color 150ms ease, background 150ms ease;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.upload-drop:hover,
+.upload-drop--active {
+  border-color: var(--sx-primary);
+  background: var(--sx-primary-4);
+}
+.upload-drop__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sx-text-primary);
+}
+.upload-drop__hint {
+  font-size: 11px;
+  color: var(--sx-text-muted);
+}
+
+.upload-loading {
+  background: var(--sx-info-bg);
+  color: var(--sx-info-fg);
+  padding: 8px 12px;
+  border-radius: var(--sx-radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.upload-errors {
+  background: var(--sx-error-bg);
+  border-radius: var(--sx-radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.upload-errors__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sx-error-fg);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.upload-errors ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11.5px;
+  color: var(--sx-error-fg);
+  line-height: 1.55;
+}
+
+.upload-template {
+  background: linear-gradient(135deg, rgba(46,49,190,0.04), rgba(124,58,237,0.04) 100%);
+  border: 1px solid rgba(124,58,237,0.16);
+  border-radius: var(--sx-radius-md);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+.upload-template__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sx-text-primary);
+  margin-bottom: 4px;
+}
+.upload-template__desc {
+  font-size: 11px;
+  color: var(--sx-text-muted);
+  margin-bottom: 10px;
+}
+.upload-template__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Source badge in the page header */
+.data-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--sx-text-gray-700);
+  background: var(--sx-bg-surface);
+  border: 1px solid var(--sx-border-light);
+  padding: 3px 9px;
+  border-radius: var(--sx-radius-pill);
+}
+.data-source-chip strong { color: var(--sx-text-primary); font-weight: 600; }
+.data-source-chip--uploaded {
+  background: var(--sx-success-bg);
+  color: var(--sx-success-fg);
+  border-color: rgba(22,163,74,0.18);
+}
+.data-source-chip--uploaded strong { color: var(--sx-success-fg); }

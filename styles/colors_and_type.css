@@ -1,0 +1,224 @@
+/* ============================================================
+   SourceX / Fynd ERP Design System
+   Colors + Type — derived from frontend/src/shared/theme.ts
+   ============================================================ */
+
+@font-face {
+  font-family: "Fynd Sans";
+  src: url("/fonts/FyndSans.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Google Sans — primary UI sans (loaded via Google Fonts in production) */
+@import url("https://fonts.googleapis.com/css2?family=Google+Sans:wght@300;400;500;600;700&display=swap");
+
+:root {
+  /* ---------- Brand / Primary ---------- */
+  --sx-primary:           #2e31be;  /* brand indigo */
+  --sx-primary-light:     #5a5dd8;
+  --sx-primary-dark:      #1e1f8a;
+  --sx-primary-contrast:  #ffffff;
+
+  /* Subtle tints of the primary */
+  --sx-primary-4:  #2e31be0a;  /* 4% */
+  --sx-primary-8:  #2e31be14;  /* 8% */
+
+  /* ---------- Backgrounds ---------- */
+  --sx-bg-white:         #ffffff;
+  --sx-bg-muted:         #f8f8f8;   /* page backgrounds, table header */
+  --sx-bg-surface:       #F5F5F5;   /* secondary surface */
+  --sx-bg-table-header:  #f9fafb;
+  --sx-bg-warning:       #fff8e1;
+  --sx-bg-header-card:   #1f1f1f;   /* dark header / top bar */
+  --sx-bg-header-card-hover: #2b2b2b;
+
+  /* ---------- Text ---------- */
+  --sx-text-primary:     #141414;   /* fg1 */
+  --sx-text-muted:       #8F8F8F;   /* fg2 */
+  --sx-text-subtle:      #9ca3af;   /* fg3 / placeholders */
+  --sx-text-icon-muted:  #5A5A5A;
+  --sx-text-table-head:  #111827;
+  --sx-text-gray-700:    #374151;
+  --sx-text-gray-600:    #4b5563;
+  --sx-text-gray-500:    #6b7280;
+  --sx-text-white-80:    #ffffff80;
+
+  /* ---------- Borders ---------- */
+  --sx-border-light:     #e5e7eb;
+  --sx-border-gray:      #D0D5DD;
+  --sx-border-input:     #d1d5db;
+  --sx-border-card-icon: #F0F0F0;
+  --sx-border-white-10:  #ffffff1a;
+  --sx-border-white-20:  #ffffff33;
+  --sx-border-white-30:  #ffffff4d;
+
+  /* ---------- Semantic ---------- */
+  --sx-success:          #16a34a;
+  --sx-success-bg:       #d1fae5;
+  --sx-success-fg:       #065f46;
+  --sx-success-dot:      #10b981;
+
+  --sx-warning:          #f59e0b;
+  --sx-warning-bg:       #fef3c7;
+  --sx-warning-fg:       #92400e;
+  --sx-warning-accent:   #F7A922;
+
+  --sx-error:            #F04438;
+  --sx-error-bg:         #fee2e2;
+  --sx-error-fg:         #991b1b;
+  --sx-error-dot:        #ef4444;
+
+  --sx-info-bg:          #e0e7ff;
+  --sx-info-fg:          #3730a3;
+  --sx-info-dot:         #6366f1;
+
+  --sx-neutral-bg:       #f3f4f6;
+  --sx-neutral-fg:       #374151;
+  --sx-neutral-dot:      #6b7280;
+
+  /* Accents */
+  --sx-accent-violet:    #7c3aed;
+  --sx-accent-pink:      #ec4899;
+  --sx-accent-amber:     #f59e0b;
+  --sx-accent-indigo:    #6366f1;
+  --sx-accent-cyan:      #06b6d4;
+
+  /* Chart palette */
+  --sx-chart-purple:     #9C27B0;
+  --sx-chart-orange:     #FF9800;
+  --sx-chart-cyan:       #00BCD4;
+
+  /* Portal label gradient (Business / Partner) */
+  --sx-portal-gradient:  linear-gradient(135deg, #00baff 0%, #d5ffd9 100%);
+
+  /* AI / Kaily gradients */
+  --sx-ai-icon-gradient: linear-gradient(135deg, #2e31be 0%, #7c3aed 50%, #ec4899 100%);
+  --sx-ai-text-gradient: linear-gradient(90deg, #2e31be, #7c3aed);
+  --sx-ai-report-gradient: linear-gradient(135deg, #2e31be 0%, #5b3cc4 100%);
+
+  /* ---------- Shadows ---------- */
+  --sx-shadow-card:       0px 2px 2px 1px #A1A1A11A;
+  --sx-shadow-card-lg:    0px 4px 12px rgba(0, 0, 0, 0.08);
+  --sx-shadow-sidebar:    4px 0 16px rgba(0, 0, 0, 0.08);
+  --sx-shadow-menu:       0px 2px 8px rgba(0, 0, 0, 0.1);
+  --sx-shadow-popover:    0px 2px 8px rgba(0, 0, 0, 0.1);
+  --sx-shadow-item-hover: 0 4px 4px 1px #0000001A;
+  --sx-shadow-ai-idle:    0 0 12px 3px rgba(46,49,190,0.2),
+                          0 0 28px 6px rgba(124,58,237,0.15),
+                          0 0 48px 10px rgba(236,72,153,0.08);
+
+  /* ---------- Radii ---------- */
+  --sx-radius-xs:  4px;   /* chips */
+  --sx-radius-sm:  6px;
+  --sx-radius-md:  8px;   /* default for buttons, inputs, cards, paper */
+  --sx-radius-lg:  12px;
+  --sx-radius-xl:  16px;
+  --sx-radius-pill: 999px; /* MUI Button override */
+
+  /* ---------- Spacing (MUI 4px base) ---------- */
+  --sx-space-1:  4px;
+  --sx-space-2:  8px;
+  --sx-space-3:  12px;
+  --sx-space-4:  16px;
+  --sx-space-5:  20px;
+  --sx-space-6:  24px;
+  --sx-space-8:  32px;
+  --sx-space-10: 40px;
+  --sx-space-12: 48px;
+
+  /* ---------- Type — families ---------- */
+  --sx-font-sans:    "Google Sans", -apple-system, BlinkMacSystemFont,
+                     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sx-font-display: "Fynd Sans", "Google Sans", -apple-system, sans-serif;
+
+  /* ---------- Type — semantic scale (from Typography.tsx DesignVariant) ---------- */
+  --sx-fs-page-title:       28px;  /* h1 — page titles */
+  --sx-fs-section-title:    20px;  /* h2 — major sections */
+  --sx-fs-sub-section:      16px;  /* h3 */
+  --sx-fs-card-title:       16.5px;
+  --sx-fs-card-subtitle:    18px;
+  --sx-fs-body:             15px;
+  --sx-fs-body-sm:          14px;
+  --sx-fs-label:            14px;
+  --sx-fs-caption:          12px;
+
+  --sx-lh-tight:   1.3;
+  --sx-lh-snug:    1.4;
+  --sx-lh-normal:  1.5;
+  --sx-lh-relaxed: 1.6;
+
+  --sx-fw-regular:  400;
+  --sx-fw-medium:   500;
+  --sx-fw-semibold: 600;
+  --sx-fw-bold:     700;
+}
+
+/* ============================================================
+   Base elements — semantic type
+   ============================================================ */
+html, body {
+  font-family: var(--sx-font-sans);
+  color: var(--sx-text-primary);
+  background: var(--sx-bg-white);
+}
+
+h1, .sx-h1 {
+  font-family: var(--sx-font-sans);
+  font-weight: var(--sx-fw-bold);
+  font-size: var(--sx-fs-page-title);
+  line-height: var(--sx-lh-tight);
+  letter-spacing: -0.01em;
+  color: var(--sx-text-primary);
+  margin: 0;
+}
+
+h2, .sx-h2 {
+  font-weight: var(--sx-fw-semibold);
+  font-size: var(--sx-fs-section-title);
+  line-height: var(--sx-lh-snug);
+  color: var(--sx-text-primary);
+  margin: 0;
+}
+
+h3, .sx-h3 {
+  font-weight: var(--sx-fw-semibold);
+  font-size: var(--sx-fs-sub-section);
+  line-height: var(--sx-lh-snug);
+  color: var(--sx-text-primary);
+  margin: 0;
+}
+
+p, .sx-body {
+  font-size: var(--sx-fs-body);
+  line-height: var(--sx-lh-relaxed);
+  color: var(--sx-text-primary);
+  margin: 0;
+}
+
+.sx-body-sm {
+  font-size: var(--sx-fs-body-sm);
+  line-height: var(--sx-lh-normal);
+  color: var(--sx-text-primary);
+}
+
+.sx-label {
+  font-weight: var(--sx-fw-medium);
+  font-size: var(--sx-fs-label);
+  letter-spacing: 0.1px;
+  color: var(--sx-text-primary);
+}
+
+.sx-caption {
+  font-size: var(--sx-fs-caption);
+  line-height: var(--sx-lh-snug);
+  color: var(--sx-text-muted);
+}
+
+/* Display type — used for wordmarks / hero titles (Fynd Sans) */
+.sx-display {
+  font-family: var(--sx-font-display);
+  font-weight: var(--sx-fw-regular);
+  letter-spacing: -0.005em;
+}
